@@ -1,0 +1,26 @@
+{
+  "name": "dds-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Doctor Digital System (DDS) Monorepo",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api dev",
+    "dev:ai": "cd services/AiAssistant && uvicorn app.main:app --reload",
+    "build:web": "pnpm --filter web build",
+    "build:api": "pnpm --filter api build",
+    "db:generate": "pnpm --filter db generate",
+    "db:migrate": "pnpm --filter db db:migrate",
+    "db:seed": "pnpm --filter db db:seed"
+  },
+  "keywords": [
+    "DDS",
+    "Morocco",
+    "E-Health",
+    "Next.js",
+    "FastAPI",
+    "TypeScript"
+  ],
+  "author": "",
+  "license": "ISC"
+}
