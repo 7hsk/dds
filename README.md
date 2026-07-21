@@ -21,4 +21,82 @@ This project is organized as a **monorepo** with the following workspaces:
 
 ## Getting Started
 
-*(Refer to individual folders for specific setup instructions)*
+### 1) Install dependencies
+
+From the repository root, install the workspace dependencies:
+
+```bash
+pnpm install
+```
+
+### 2) Generate the database client
+
+The Prisma client is used by the shared database package:
+
+```bash
+pnpm db:generate
+```
+
+If you need to apply database migrations locally:
+
+```bash
+pnpm db:migrate
+```
+
+To seed the local database data:
+
+```bash
+pnpm db:seed
+```
+
+### 3) Run the app locally
+
+Start the web frontend:
+
+```bash
+pnpm dev:web
+```
+
+Open http://localhost:3000
+
+Start the API backend:
+
+```bash
+pnpm dev:api
+```
+
+The API will run on http://localhost:3001 and exposes:
+
+- http://localhost:3001/api/health
+
+Start the AI assistant service:
+
+```bash
+pnpm dev:ai
+```
+
+The AI service will run via FastAPI/Uvicorn and is typically available at http://localhost:8000/docs
+
+### 4) Useful build commands
+
+Build the web app:
+
+```bash
+pnpm build:web
+```
+
+Build the API:
+
+```bash
+pnpm build:api
+```
+
+### 5) Project structure overview
+
+- apps/Web: Next.js frontend
+- apps/Api: Express backend
+- services/AiAssistant: FastAPI AI service
+- packages/Db: Prisma database layer
+- packages/Types: shared TypeScript types
+
+If you want, I can also add a short “Troubleshooting” section for common issues like Prisma generation errors or missing Python dependencies.

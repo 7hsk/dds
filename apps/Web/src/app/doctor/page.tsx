@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { Suspense, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 /* ─── Mock Data ──────────────────────────────────── */
 const MOCK_PATIENTS = [
@@ -34,11 +35,24 @@ const MOCK_PATIENTS = [
   },
 ];
 
-const MOCK_APPOINTMENTS = [
-  { id: 'a1', patientId: 'p1', time: '09:30', type: 'TELECONSULTATION' as const, status: 'CONFIRMED' as const, whatsappOptIn: true },
-  { id: 'a2', patientId: 'p2', time: '11:00', type: 'PHYSICAL' as const, status: 'PENDING' as const, whatsappOptIn: true },
-  { id: 'a3', patientId: 'p3', time: '14:00', type: 'TELECONSULTATION' as const, status: 'COMPLETED' as const, whatsappOptIn: false },
-  { id: 'a4', patientId: 'p4', time: '16:30', type: 'PHYSICAL' as const, status: 'PENDING' as const, whatsappOptIn: true },
+type AppointmentType = 'PHYSICAL' | 'TELECONSULTATION';
+type AppointmentStatus = 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+
+interface Appointment {
+  id: string;
+  patientId: string;
+  time: string;
+  type: AppointmentType;
+  status: AppointmentStatus;
+  whatsappOptIn: boolean;
+  note?: string;
+}
+
+const MOCK_APPOINTMENTS: Appointment[] = [
+  { id: 'a1', patientId: 'p1', time: '09:30', type: 'TELECONSULTATION', status: 'CONFIRMED', whatsappOptIn: true, note: 'Consentement WhatsApp + lien vidéoconférence déjà envoyé' },
+  { id: 'a2', patientId: 'p2', time: '11:00', type: 'PHYSICAL', status: 'PENDING', whatsappOptIn: true, note: 'Patient à confirmer pour une consultation de suivi' },
+  { id: 'a3', patientId: 'p3', time: '14:00', type: 'TELECONSULTATION', status: 'COMPLETED', whatsappOptIn: false, note: 'Compte-rendu envoyé au patient' },
+  { id: 'a4', patientId: 'p4', time: '16:30', type: 'PHYSICAL', status: 'PENDING', whatsappOptIn: true, note: 'Rappel automatique programmé 24h avant' },
 ];
 
 const WHATSAPP_LOGS = [
@@ -51,13 +65,35 @@ const WHATSAPP_LOGS = [
 ];
 
 type Tab = 'agenda' | 'patients' | 'ai' | 'whatsapp' | 'analytics';
+type AppointmentFilterState = {
+  status: 'all' | 'pending' | 'confirmed' | 'cancelled';
+  type: 'all' | 'tele' | 'physical';
+  search: string;
+};
 
 /* ─── Component ──────────────────────────────────── */
 export default function DoctorDashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>('agenda');
+  return (
+    <Suspense fallback={<div style={{ ...S.loadingCard, minHeight: '60vh' }}>Chargement du tableau de bord…</div>}>
+      <DoctorDashboardContent />
+    </Suspense>
+  );
+}
+
+function DoctorDashboardContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: Tab = tabParam && ['agenda', 'patients', 'ai', 'whatsapp', 'analytics'].includes(tabParam) ? (tabParam as Tab) : 'agenda';
+  const setActiveTab = (tab: Tab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tab);
+    router.push(`/doctor?${params.toString()}`, { scroll: false });
+  };
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
-  const [appointments, setAppointments] = useState(MOCK_APPOINTMENTS);
+  const [appointments, setAppointments] = useState<Appointment[]>(MOCK_APPOINTMENTS);
   const [logs, setLogs] = useState(WHATSAPP_LOGS);
+  const [appointmentFilters, setAppointmentFilters] = useState<AppointmentFilterState>({ status: 'all', type: 'all', search: '' });
   const [aiJustification, setAiJustification] = useState('');
   const [aiResult, setAiResult] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -204,6 +240,29 @@ export default function DoctorDashboard() {
   };
 
   const selectedPatient = selectedPatientId ? getPatient(selectedPatientId) : null;
+  const filteredAppointments = appointments.filter((apt) => {
+    const patient = getPatient(apt.patientId);
+    const matchesStatus = appointmentFilters.status === 'all'
+      ? true
+      : appointmentFilters.status === 'pending'
+        ? apt.status === 'PENDING'
+        : appointmentFilters.status === 'confirmed'
+          ? apt.status === 'CONFIRMED'
+          : apt.status === 'CANCELLED';
+    const matchesType = appointmentFilters.type === 'all'
+      ? true
+      : appointmentFilters.type === 'tele'
+        ? apt.type === 'TELECONSULTATION'
+        : apt.type === 'PHYSICAL';
+    const searchText = `${patient?.name || ''} ${patient?.phone || ''} ${patient?.city || ''} ${apt.note || ''}`.toLowerCase();
+    const matchesSearch = appointmentFilters.search.trim() === '' || searchText.includes(appointmentFilters.search.trim().toLowerCase());
+
+    return matchesStatus && matchesType && matchesSearch;
+  });
+
+  const resetAppointmentFilters = () => {
+    setAppointmentFilters({ status: 'all', type: 'all', search: '' });
+  };
 
   /* ─── Render helpers ───────────────────────────── */
   const statusColor = (s: string) => {
@@ -290,6 +349,87 @@ export default function DoctorDashboard() {
                 </button>
               </div>
 
+              <div style={S.summaryGrid}>
+                <div style={S.summaryCard}>
+                  <div style={S.summaryTop}>
+                    <span style={S.summaryLabel}>RDV aujourd’hui</span>
+                    <span style={S.summaryBadge}>{filteredAppointments.length}</span>
+                  </div>
+                  <p style={S.summaryHint}>Affiche uniquement les consultations correspondant aux filtres actifs.</p>
+                </div>
+                <div style={S.summaryCard}>
+                  <div style={S.summaryTop}>
+                    <span style={S.summaryLabel}>À confirmer</span>
+                    <span style={{ ...S.summaryBadge, background: 'rgba(251,191,36,0.12)', color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)' }}>{appointments.filter((a) => a.status === 'PENDING').length}</span>
+                  </div>
+                  <p style={S.summaryHint}>Rendez-vous en attente d’une action du médecin ou du patient.</p>
+                </div>
+                <div style={S.summaryCard}>
+                  <div style={S.summaryTop}>
+                    <span style={S.summaryLabel}>Téléconsultations</span>
+                    <span style={{ ...S.summaryBadge, background: 'rgba(56,189,248,0.12)', color: '#38bdf8', borderColor: 'rgba(56,189,248,0.3)' }}>{appointments.filter((a) => a.type === 'TELECONSULTATION').length}</span>
+                  </div>
+                  <p style={S.summaryHint}>Sujets de consultation à distance, avec suivi dans le dossier patient.</p>
+                </div>
+              </div>
+
+              <div style={S.filterPanel}>
+                <div style={S.filterGroup}>
+                  <label style={S.filterLabel}>Recherche rapide</label>
+                  <input
+                    value={appointmentFilters.search}
+                    onChange={(e) => setAppointmentFilters((prev) => ({ ...prev, search: e.target.value }))}
+                    placeholder="Nom, téléphone, ville..."
+                    style={S.filterInput}
+                  />
+                </div>
+
+                <div style={S.filterGroup}>
+                  <label style={S.filterLabel}>État</label>
+                  <div style={S.filterRow}>
+                    {[
+                      { key: 'all', label: 'Tous' },
+                      { key: 'pending', label: 'À confirmer' },
+                      { key: 'confirmed', label: 'Confirmés' },
+                      { key: 'cancelled', label: 'Annulés' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => setAppointmentFilters((prev) => ({ ...prev, status: item.key as AppointmentFilterState['status'] }))}
+                        style={{ ...S.filterChip, ...(appointmentFilters.status === item.key ? S.filterChipActive : {}) }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={S.filterGroup}>
+                  <label style={S.filterLabel}>Type de consultation</label>
+                  <div style={S.filterRow}>
+                    {[
+                      { key: 'all', label: 'Tous' },
+                      { key: 'tele', label: 'Téléconsultation' },
+                      { key: 'physical', label: 'Présentiel' },
+                    ].map((item) => (
+                      <button
+                        key={item.key}
+                        onClick={() => setAppointmentFilters((prev) => ({ ...prev, type: item.key as AppointmentFilterState['type'] }))}
+                        style={{ ...S.filterChip, ...(appointmentFilters.type === item.key ? S.filterChipActive : {}) }}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {(appointmentFilters.status !== 'all' || appointmentFilters.type !== 'all' || appointmentFilters.search.trim() !== '') && (
+                  <button style={S.secondaryBtn} onClick={resetAppointmentFilters}>
+                    ✕ Réinitialiser
+                  </button>
+                )}
+              </div>
+
               {showNewAptForm && (
                 <div className="animate-slide-down" style={S.formCard}>
                   <h3 style={S.formTitle}>Nouveau Rendez-vous</h3>
@@ -317,7 +457,7 @@ export default function DoctorDashboard() {
               )}
 
               <div style={S.cardGrid}>
-                {appointments
+                {filteredAppointments
                   .sort((a, b) => a.time.localeCompare(b.time))
                   .map((apt) => {
                     const patient = getPatient(apt.patientId);
@@ -331,6 +471,7 @@ export default function DoctorDashboard() {
                         </div>
                         <h3 style={S.aptName}>{patient?.name || 'Inconnu'}</h3>
                         <p style={S.aptMeta}>{patient?.phone} — {patient?.city}</p>
+                        {apt.note && <p style={S.aptNote}>{apt.note}</p>}
                         <div style={S.aptBottom}>
                           <span style={{ ...S.statusDot, background: statusColor(apt.status) }} />
                           <span style={{ color: statusColor(apt.status), fontWeight: 600, fontSize: '0.8rem' }}>{statusLabel(apt.status)}</span>
@@ -397,6 +538,12 @@ export default function DoctorDashboard() {
                         <div style={S.infoItem}><span style={S.infoLabel}>Sexe</span><span style={S.infoValue}>{selectedPatient.gender === 'M' ? 'Masculin' : 'Féminin'}</span></div>
                         <div style={S.infoItem}><span style={S.infoLabel}>Date de Naissance</span><span style={S.infoValue}>{selectedPatient.birthDate}</span></div>
                         <div style={S.infoItem}><span style={S.infoLabel}>Sécurité</span><span style={{ ...S.infoValue, color: '#10b981' }}>🔒 Chiffré AES-256-GCM</span></div>
+                      </div>
+
+                      <div style={S.quickActions}>
+                        <button style={S.smallBtn} onClick={() => setShowNewRecordForm(true)}>📝 Nouvelle note clinique</button>
+                        <button style={S.smallBtn} onClick={() => showToast('Rappel envoyé au patient via WhatsApp', 'success')}>📱 Envoyer rappel</button>
+                        <button style={S.smallBtn} onClick={() => showToast('Ordonnance préparée pour validation', 'success')}>💊 Préparer ordonnance</button>
                       </div>
 
                       <div style={S.recordsHeader}>
@@ -635,11 +782,31 @@ const S: { [key: string]: React.CSSProperties } = {
   main: { flex: 1, padding: '2rem', overflowY: 'auto', maxHeight: 'calc(100vh - 65px)' },
   tabHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' as const, gap: '1rem' },
   tabTitle: { fontSize: '1.3rem', fontWeight: 800, margin: 0 },
+  summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1.25rem' },
+  summaryCard: {
+    background: 'linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.86))',
+    border: '1px solid rgba(148,163,184,0.18)',
+    borderRadius: '18px', padding: '1.3rem',
+    boxShadow: '0 14px 35px rgba(15,23,42,0.16)',
+  },
+  summaryTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '0.9rem' },
+  summaryLabel: { fontSize: '0.85rem', fontWeight: 700, letterSpacing: '0.05em', color: '#cbd5e1', textTransform: 'uppercase' as const },
+  summaryBadge: {
+    minWidth: '3rem', textAlign: 'center', padding: '0.45rem 0.8rem', borderRadius: '999px',
+    border: '1px solid rgba(56,189,248,0.25)', background: 'rgba(56,189,248,0.12)', color: '#38bdf8', fontWeight: 800,
+  },
+  summaryHint: { fontSize: '0.82rem', color: '#94a3b8', lineHeight: 1.6, margin: 0 },
   primaryBtn: {
     background: 'var(--gradient-primary)', color: '#fff',
     padding: '0.6rem 1.25rem', borderRadius: '10px',
     fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
     border: 'none', transition: 'opacity 0.2s',
+  },
+  secondaryBtn: {
+    background: 'rgba(148, 163, 184, 0.12)', color: '#cbd5e1',
+    padding: '0.55rem 0.95rem', borderRadius: '10px',
+    fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer',
+    border: '1px solid rgba(148, 163, 184, 0.2)', transition: 'all 0.2s',
   },
   smallBtn: {
     background: 'rgba(56,189,248,0.1)', color: '#38bdf8',
@@ -650,6 +817,26 @@ const S: { [key: string]: React.CSSProperties } = {
   formCard: {
     background: 'var(--bg-card)', border: '1px solid var(--border)',
     borderRadius: '14px', padding: '1.5rem', marginBottom: '1.5rem',
+  },
+  filterPanel: {
+    background: 'var(--bg-card)', border: '1px solid var(--border)',
+    borderRadius: '14px', padding: '1rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column' as const, gap: '0.9rem',
+  },
+  filterGroup: { display: 'flex', flexDirection: 'column' as const, gap: '0.45rem' },
+  filterLabel: { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
+  filterInput: {
+    width: '100%', padding: '0.65rem 0.8rem', borderRadius: '10px',
+    border: '1px solid var(--border)', background: 'var(--bg-primary)',
+    color: 'var(--text-primary)', fontSize: '0.85rem', boxSizing: 'border-box' as const,
+  },
+  filterRow: { display: 'flex', flexWrap: 'wrap' as const, gap: '0.6rem' },
+  filterChip: {
+    padding: '0.5rem 0.8rem', borderRadius: '999px', border: '1px solid var(--border)',
+    background: 'transparent', color: 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600,
+    cursor: 'pointer', transition: 'all 0.2s',
+  },
+  filterChipActive: {
+    background: 'rgba(56, 189, 248, 0.14)', borderColor: 'rgba(56, 189, 248, 0.3)', color: '#38bdf8',
   },
   formTitle: { fontSize: '1rem', fontWeight: 700, marginBottom: '1rem' },
   formGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' },

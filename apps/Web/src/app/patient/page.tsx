@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 /* ─── Mock Patient Data ──────────────────────────── */
 const PATIENT_USER = {
@@ -45,7 +46,23 @@ const CONSENTS = [
 type PatientTab = 'dashboard' | 'appointments' | 'records' | 'prescriptions' | 'book' | 'consent';
 
 export default function PatientPortal() {
-  const [activeTab, setActiveTab] = useState<PatientTab>('dashboard');
+  return (
+    <Suspense fallback={<div style={{ ...S.loadingCard, minHeight: '60vh' }}>Chargement de l’espace patient…</div>}>
+      <PatientPortalContent />
+    </Suspense>
+  );
+}
+
+function PatientPortalContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: PatientTab = tabParam && ['dashboard', 'appointments', 'records', 'prescriptions', 'book', 'consent'].includes(tabParam) ? (tabParam as PatientTab) : 'dashboard';
+  const setActiveTab = (tab: PatientTab) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tab);
+    router.push(`/patient?${params.toString()}`, { scroll: false });
+  };
   const [consents, setConsents] = useState(CONSENTS);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
@@ -54,6 +71,8 @@ export default function PatientPortal() {
   const [bookDate, setBookDate] = useState('');
   const [bookTime, setBookTime] = useState('');
   const [bookType, setBookType] = useState<'PHYSICAL' | 'TELECONSULTATION'>('PHYSICAL');
+  const [bookReminder, setBookReminder] = useState<'whatsapp' | 'sms' | 'none'>('whatsapp');
+  const [bookReason, setBookReason] = useState('');
   const [bookings, setBookings] = useState(MY_APPOINTMENTS);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -70,8 +89,8 @@ export default function PatientPortal() {
       status: 'PENDING' as const, location: doc.city,
     };
     setBookings(prev => [newBooking, ...prev]);
-    showToast(`RDV demandé chez ${doc.name} — en attente de confirmation ✓`);
-    setBookDate(''); setBookTime('');
+    showToast(`RDV demandé chez ${doc.name} — rappel ${bookReminder === 'whatsapp' ? 'WhatsApp' : bookReminder === 'sms' ? 'SMS' : 'désactivé'} programmé ✓`);
+    setBookDate(''); setBookTime(''); setBookReason('');
   };
 
   const handleToggleConsent = (type: string) => {
@@ -186,6 +205,16 @@ export default function PatientPortal() {
                 );
               })()}
 
+              <div style={S.dashboardCard}>
+                <h3 style={S.cardTitle}>Pré-consultation rapide</h3>
+                <p style={S.cardText}>Préparez votre visite avec un rappel, une fiche de symptômes et vos consentements déjà enregistrés.</p>
+                <div style={S.quickChecklist}>
+                  <span style={S.checkItem}>✓ Consentements validés</span>
+                  <span style={S.checkItem}>✓ Rappels WhatsApp actifs</span>
+                  <span style={S.checkItem}>✓ Dossier médical disponible</span>
+                </div>
+              </div>
+
               <div style={{ marginTop: '1.5rem' }}>
                 <button style={S.primaryBtn} onClick={() => setActiveTab('book')}>📅 Prendre un Rendez-vous</button>
               </div>
@@ -231,6 +260,18 @@ export default function PatientPortal() {
                       <option value="TELECONSULTATION">📹 Téléconsultation</option>
                     </select>
                   </div>
+                  <div>
+                    <label style={S.label}>Rappel</label>
+                    <select value={bookReminder} onChange={e => setBookReminder(e.target.value as any)} style={S.select}>
+                      <option value="whatsapp">WhatsApp</option>
+                      <option value="sms">SMS</option>
+                      <option value="none">Aucun rappel</option>
+                    </select>
+                  </div>
+                </div>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={S.label}>Motif de consultation</label>
+                  <textarea value={bookReason} onChange={e => setBookReason(e.target.value)} style={S.textarea} rows={3} placeholder="Décrivez votre besoin, symptômes ou objectif de la consultation" />
                 </div>
                 <button style={S.primaryBtn} onClick={handleBook}>Confirmer la demande de RDV</button>
               </div>
@@ -443,6 +484,17 @@ const S: { [key: string]: React.CSSProperties } = {
     borderRadius: '14px', padding: '1.5rem', marginBottom: '1.5rem',
   },
   formGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' },
+  dashboardCard: { background: 'var(--bg-card)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: '14px', padding: '1.25rem', marginTop: '1rem' },
+  cardTitle: { fontSize: '0.95rem', fontWeight: 700, margin: '0 0 0.4rem' },
+  cardText: { fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: '0 0 0.85rem' },
+  quickChecklist: { display: 'flex', flexWrap: 'wrap' as const, gap: '0.6rem' },
+  checkItem: { background: 'rgba(16,185,129,0.12)', color: '#4ade80', borderRadius: '999px', padding: '0.35rem 0.7rem', fontSize: '0.78rem' },
+  textarea: {
+    width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px',
+    border: '1px solid var(--border)', background: 'var(--bg-primary)',
+    color: 'var(--text-primary)', fontSize: '0.85rem', boxSizing: 'border-box' as const,
+    resize: 'vertical' as const,
+  },
   label: { fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '0.35rem', textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
   input: {
     width: '100%', padding: '0.6rem 0.85rem', borderRadius: '8px',
